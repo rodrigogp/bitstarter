@@ -26,6 +26,8 @@ var program = require('commander');
 var cheerio = require('cheerio');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
+var rest = require('restler');
+var URL_DEFAULT = 'http://intense-dusk-5771.herokuapp.com';
 
 var assertFileExists = function(infile) {
     var instr = infile.toString();
@@ -40,16 +42,19 @@ var cheerioHtmlFile = function(htmlfile) {
     return cheerio.load(fs.readFileSync(htmlfile));
 };
 
+var cheerioHtml = function(htmlfile) {
+    return cheerio.load(htmlfile);
+};
+
 var loadChecks = function(checksfile) {
     return JSON.parse(fs.readFileSync(checksfile));
 };
 
-var checkHtmlFile = function(htmlfile, checksfile) {
-    $ = cheerioHtmlFile(htmlfile);
+var checkHtml = function(htmlToCheck, checksfile) {
     var checks = loadChecks(checksfile).sort();
     var out = {};
     for(var ii in checks) {
-        var present = $(checks[ii]).length > 0;
+        var present = htmlToCheck(checks[ii]).length > 0;
         out[checks[ii]] = present;
     }
     return out;
@@ -61,14 +66,42 @@ var clone = function(fn) {
     return fn.bind({});
 };
 
+
+var processHTML = function(html,checks){
+		var checkJson = checkHtml(html, checks);
+                var outJson = JSON.stringify(checkJson, null, 4);
+                console.log(outJson);
+}
+
+var buildfn = function(checks){
+    var processURLResponse = function(result, response) {
+        if (result instanceof Error) {
+            console.error('Error: ' + util.format(response.message));
+        } else {
+		var htmlToCheck = cheerioHtml(result);
+                processHTML(htmlToCheck,checks);
+        }
+    };
+	return processURLResponse;
+}
+
+var getHTMLFromURL = function(url,processURLResponse){
+	rest.get(url).on('complete',processURLResponse);
+};
+
 if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
         .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+	.option('-u, --url [http_url]', 'URL to html file')
         .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+	if(program.url){
+		var processURLResponse = buildfn(program.checks);
+		getHTMLFromURL(program.url,processURLResponse);
+	}else{
+		var htmlToCheck = cheerioHtmlFile(program.file);
+		processHTML(htmlToCheck,program.checks);
+	}
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
